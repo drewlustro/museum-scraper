@@ -138,22 +138,21 @@ let run = async () => {
 
   // page.setDefaultNavigationTimeout(TIMEOUT_MS)
 
-  // fetch
-  // const artworkPageUrls = await scrapeUrls(page);
+  // [fetch]
+  const artworkPageUrls = await scrapeUrls(page);
 
-  // read
-  const jsonText = await fs.readFile('./artwork-urls.json');
-  const artworkPageUrls = JSON.parse(jsonText);
-  success(`Total ${artworkPageUrls.length} URLs`);
-
-  // write
+  // [write]
   // save to file just in case
   // const json = JSON.stringify(artworkPageUrls);
   // await fs.writeFile('./artwork-urls.json', json);
 
+  // [read]
+  // const jsonText = await fs.readFile('./artwork-urls.json');
+  // const artworkPageUrls = JSON.parse(jsonText);
+  // success(`Total ${artworkPageUrls.length} URLs`);
+
   // download
   await downloadArt(page, artworkPageUrls);
-  // await browser.close();
 }
 
 run();
