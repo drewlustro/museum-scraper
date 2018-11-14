@@ -1,6 +1,6 @@
 {
   "name": "museum-scrape",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Scrapes Creative Commons Zero (CC0) licensed artworks recently put into public domain by the Art Institute of Chicago Scraper via puppeteer",
   "main": "index.js",
   "author": "Drew Lustro",
