@@ -1,13 +1,34 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs").promises;
 const request = require("request");
+const logSymbols = require('log-symbols');
+const progress = require('progress');
+const chalk = require('chalk');
+
+const log = console.log;
+const info = () => log(logSymbols.info, chalk.gray(Array.from(arguments).join(' ')));
+const infowarm = () => log(logSymbols.info, chalk.yellow(Array.from(arguments).join(' ')));
+const warn = () => log(logSymbols.warning, ...arguments);
+const error = () => log(logSymbols.error, ...arguments);
+const success = () => log(logSymbols.success, ...arguments);
+const hr = () => log(chalk.dim('------------------------------'));
 
 const TIMEOUT_MS = 3000;
 const MAX_ATTEMPTS = 100;
-const MAX_ERRORS = 30;
+const MAX_EXCEPTIONS = 30;
+
+const PROGRESS_TEMPLATE = ':current/:total  [:bar] :percent    :eta sec remain'
 
 let scrapeUrls = async (page) => {
+  const bar = new progress(PROGRESS_TEMPLATE, {
+    total: MAX_ATTEMPTS,
+    width: 60,
+    complete: '◽️',
+    incomplete: ' ',
+  });
+
   await page.setRequestInterception(true);
+
   page.on('request', request => {
     if (request.resourceType() === 'image') {
       request.abort();
@@ -21,13 +42,17 @@ let scrapeUrls = async (page) => {
     timeout: TIMEOUT_MS
   });
 
-  let attempts = 0, previousHeight = 0, errors = 0;
+  let attempts = 0, previousHeight = 0, exceptions = 0;
+
   while (attempts <= MAX_ATTEMPTS) {
-    if (errors > MAX_ERRORS) break;
+    if (exceptions > MAX_EXCEPTIONS) break;
 
     try {
+      if (!bar.complete) bar.tick();
+
       attempts++;
-      console.log(`Attempt ${attempts} of ${MAX_ATTEMPTS} attempts (max)`)
+      info(`Attempt ${attempts} of ${MAX_ATTEMPTS} attempts (max)`)
+
       previousHeight = await page.evaluate('document.body.scrollHeight');
       await page.evaluate('window.scrollTo(0, document.body.scrollHeight - 200)');
       await page.waitFor('[data-behavior="loadMore"]', { timeout: TIMEOUT_MS });
@@ -40,9 +65,13 @@ let scrapeUrls = async (page) => {
       });
 
     } catch (err) {
-      console.log('', 'Caught Error:', err, '');
-      console.log(`Error ${errors} of ${MAX_ERRORS} errors (max)`)
-      errors++;
+      error('Caught Exception')
+      hr();
+      info(err);
+      hr();
+
+      error(`Exception ${exceptions} of ${MAX_EXCEPTIONS} exceptions (max)`)
+      exceptions++;
     }
   }
 
@@ -50,7 +79,7 @@ let scrapeUrls = async (page) => {
     return links.map(link => link.href);
   });
 
-  console.log(`Total Distinct URL Count: ${urls.length}`);
+  success(`Total Distinct URL Count: ${urls.length}`);
 
   return urls;
 };
@@ -58,16 +87,24 @@ let scrapeUrls = async (page) => {
 // ----------------------------------------------------------------------
 
 let downloadArt = async (page, pageUrls) => {
-  await page.setRequestInterception(false);
-  let url;
-  let count = 0, errors = 0;
-  try {
-    while (url = pageUrls.pop()) {
-      console.log(`[fetch] ${url} ...`);
-      if (typeof url !== 'string') continue;
-      if (errors > MAX_ERRORS) break;
+  const sanitizedUrls = pageUrls.filter(url => typeof url === 'string');
 
-      console.log(`Downloaded ${count} images`)
+  const bar = new progress(PROGRESS_TEMPLATE, {
+    total: sanitizedUrls.length,
+    width: 60,
+    complete: '◽️',
+    incomplete: ' ',
+  });
+
+  await page.setRequestInterception(false);
+
+  let url;
+  let count = 0;
+
+  while (url = sanitizedUrls.pop()) {
+    try {
+      if (!bar.complete) bar.tick();
+      infowarm(`[fetch] ${url} ...`);
       count++;
 
       await page.goto(url, {
@@ -77,11 +114,14 @@ let downloadArt = async (page, pageUrls) => {
 
       // download that shit
       await page.click('button[data-gallery-download]')
+      success(`Downloading image ${count}`)
+
+    } catch (err) {
+      error('Caught Exception')
+      hr();
+      info(err);
+      hr();
     }
-  } catch (err) {
-    console.log('', 'Caught Error:', err, '');
-    console.log(`Error ${errors} of ${MAX_ERRORS} errors (max)`)
-    errors++;
   }
 };
 
@@ -96,16 +136,15 @@ let run = async () => {
     height: 1200
   });
 
-  page.setDefaultNavigationTimeout(TIMEOUT_MS)
-
+  // page.setDefaultNavigationTimeout(TIMEOUT_MS)
 
   // fetch
   // const artworkPageUrls = await scrapeUrls(page);
 
   // read
-  const json = await fs.readFile('./artwork-urls.json');
-  const artworkPageUrls = JSON.parse(json);
-  console.log(`Total ${artworkPageUrls.length} URLs`);
+  const jsonText = await fs.readFile('./artwork-urls.json');
+  const artworkPageUrls = JSON.parse(jsonText);
+  success(`Total ${artworkPageUrls.length} URLs`);
 
   // write
   // save to file just in case

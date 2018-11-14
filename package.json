@@ -10,7 +10,10 @@
     "url": "https://github.com/drewlustro/museum-scraper.git"
   },
   "dependencies": {
+    "chalk": "^2.4.1",
     "fs": "^0.0.1-security",
+    "log-symbols": "^2.2.0",
+    "node-progress": "^0.1.0",
     "puppeteer": "^1.10.0",
     "request": "^2.88.0"
   },
