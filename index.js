@@ -1,19 +1,33 @@
 const puppeteer = require("puppeteer");
-const fs = require("fs");
+const fs = require("fs").promises;
 const request = require("request");
 
 const TIMEOUT_MS = 3000;
-const MAX_PAGES = 100;
-const MAX_ERRORS = 15;
+const MAX_ATTEMPTS = 100;
+const MAX_ERRORS = 30;
 
 let scrapeUrls = async (page) => {
-  await page.goto('https://www.artic.edu/collection?is_public_domain=1')
+  await page.setRequestInterception(true);
+  page.on('request', request => {
+    if (request.resourceType() === 'image') {
+      request.abort();
+    } else {
+      request.continue();
+    }
+  });
 
-  let times = 0, previousHeight = 0, errors = 0;
-  while (times <= MAX_PAGES && errors <= MAX_ERRORS) {
+  await page.goto('https://www.artic.edu/collection?is_public_domain=1')
+  await page.waitFor(2000, {
+    timeout: TIMEOUT_MS
+  });
+
+  let attempts = 0, previousHeight = 0, errors = 0;
+  while (attempts <= MAX_ATTEMPTS) {
+    if (errors > MAX_ERRORS) break;
+
     try {
-      times++;
-      console.log(`Page ${times} of ${MAX_PAGES} (max pages)`)
+      attempts++;
+      console.log(`Attempt ${attempts} of ${MAX_ATTEMPTS} attempts (max)`)
       previousHeight = await page.evaluate('document.body.scrollHeight');
       await page.evaluate('window.scrollTo(0, document.body.scrollHeight - 200)');
       await page.waitFor('[data-behavior="loadMore"]', { timeout: TIMEOUT_MS });
@@ -26,7 +40,8 @@ let scrapeUrls = async (page) => {
       });
 
     } catch (err) {
-      console.log('Caught Error:', err);
+      console.log('', 'Caught Error:', err, '');
+      console.log(`Error ${errors} of ${MAX_ERRORS} errors (max)`)
       errors++;
     }
   }
@@ -43,20 +58,29 @@ let scrapeUrls = async (page) => {
 // ----------------------------------------------------------------------
 
 let downloadArt = async (page, pageUrls) => {
+  await page.setRequestInterception(false);
   let url;
-  let count = 1, errors = 0;;
+  let count = 0, errors = 0;
   try {
-    while (url = pageUrls.pop() && errors <= MAX_ERRORS) {
+    while (url = pageUrls.pop()) {
+      console.log(`[fetch] ${url} ...`);
+      if (typeof url !== 'string') continue;
+      if (errors > MAX_ERRORS) break;
+
+      console.log(`Downloaded ${count} images`)
+      count++;
+
       await page.goto(url, {
         waitFor: 'networkidle2',
         timeout: TIMEOUT_MS * 2
       });
-      await page.click('button[data-gallery-download]') // download that shit
-      console.log(`Downloaded ${count} images`)
-      count++;
+
+      // download that shit
+      await page.click('button[data-gallery-download]')
     }
   } catch (err) {
-    console.log('Caught Error:', err);
+    console.log('', 'Caught Error:', err, '');
+    console.log(`Error ${errors} of ${MAX_ERRORS} errors (max)`)
     errors++;
   }
 };
@@ -74,17 +98,23 @@ let run = async () => {
 
   page.setDefaultNavigationTimeout(TIMEOUT_MS)
 
-  await page.setRequestInterception(true);
-  page.on('request', request => {
-    if (request.resourceType() === 'image')
-      request.abort();
-    else
-      request.continue();
-  });
 
-  const artworkPageUrls = await scrapeUrls(page);
+  // fetch
+  // const artworkPageUrls = await scrapeUrls(page);
+
+  // read
+  const json = await fs.readFile('./artwork-urls.json');
+  const artworkPageUrls = JSON.parse(json);
+  console.log(`Total ${artworkPageUrls.length} URLs`);
+
+  // write
+  // save to file just in case
+  // const json = JSON.stringify(artworkPageUrls);
+  // await fs.writeFile('./artwork-urls.json', json);
+
+  // download
   await downloadArt(page, artworkPageUrls);
-  await browser.close();
+  // await browser.close();
 }
 
 run();
